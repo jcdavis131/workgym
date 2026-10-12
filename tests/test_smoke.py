@@ -276,5 +276,53 @@ class TestGrpoAdapter(unittest.TestCase):
                 tel["prompt"].encode()).hexdigest()[:16])
 
 
+class TestDeterminism(unittest.TestCase):
+    """Same seed -> same episode. This is the load-bearing property for RL."""
+
+    def _task_of(self, env_id, seed, **kw):
+        env = workgym.make(env_id, **kw)
+        try:
+            _o, info = env.reset(seed=seed)
+            key = next((info[k] for k in ("task_id", "diff_id", "inbox_id", "scenario_id")
+                        if k in info), None)
+            return key
+        finally:
+            env.close()
+
+    def test_same_seed_same_task(self):
+        for env_id in workgym.list_envs():
+            a = self._task_of(env_id, 123)
+            b = self._task_of(env_id, 123)
+            self.assertEqual(a, b, f"{env_id}: seed 123 not deterministic")
+
+    def test_different_seeds_vary(self):
+        seen = set()
+        for s in range(20):
+            seen.add(self._task_of("workgym/pair-programming-v0", s))
+        # 6 tasks, 20 seeds: must hit more than one task
+        self.assertGreater(len(seen), 1)
+
+    def test_fixed_policy_reproducible_reward(self):
+        def run_once():
+            env = workgym.make("workgym/cron-ops-v0", scenario_ids=["dead-trigger"])
+            try:
+                env.reset(seed=9)
+                _o, r, _t, _tr, _i = env.step({"op": "submit",
+                    "root_cause": "rc-a", "fix": "fx-x"})
+                return r
+            finally:
+                env.close()
+        self.assertEqual(run_once(), run_once())
+
+    def test_vector_env_seed_assignment(self):
+        venv = VectorEnv([lambda: workgym.make("workgym/cron-ops-v0")] * 3)
+        try:
+            outs = venv.reset(seeds=[1, 1, 2])
+            ids = [info["scenario_id"] for (_o, info) in outs]
+            self.assertEqual(ids[0], ids[1])  # same seed -> same scenario
+        finally:
+            venv.close()
+
+
 if __name__ == "__main__":
     unittest.main()

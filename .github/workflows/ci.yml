@@ -1,0 +1,25 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: unit tests
+        run: python3 -m unittest discover -s tests -v
+      - name: rollout smoke (all envs x 2 seeds)
+        run: WORKGYM_LOG_DIR=/tmp/wg-ci python3 examples/grpo_rollout.py --seeds 2
+      - name: adapter smoke
+        run: python3 -m workgym.train.grpo_adapter --episodes /tmp/wg-ci/workgym_episodes.jsonl --out /tmp/wg-ci/tel.jsonl
+      - name: compile check (no syntax drift)
+        run: python3 -m compileall -q workgym
