@@ -1,0 +1,1 @@
+"""WorkGym training lane."""
